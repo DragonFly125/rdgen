@@ -1187,7 +1187,7 @@ jobs:
         run: |
           if [ "${{ env.appname }}" != "rustdesk" ] && [ "${{ env.appname }}" != "RustDesk" ]; then
             sed -ie "s|rustdesk|${{ env.appname }}|g" appimage/*
-            mv appimage/rustdesk.deb "appimage/${{ env.filename }}.deb" 2>/dev/null || true
+            mv appimage/rustdesk.deb "appimage/${{ env.appname }}.deb" 2>/dev/null || true  # BUGFIX 2026-09-17: was env.filename, but the preceding sed already renamed the recipe's internal reference (bsdtar -zxvf rustdesk.deb -> ...appname.deb) to env.appname, not env.filename -- these differ whenever a customer's exe filename != the branded app name (always true for us), so appimage-builder could never find the renamed .deb. Confirmed live: build failed with "bsdtar: Error opening archive" until fixed.
           fi
           sudo apt-get update -y
           sudo apt-get install -y libarchive-tools libfuse2
