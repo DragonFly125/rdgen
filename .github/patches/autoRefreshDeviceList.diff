@@ -1,0 +1,149 @@
+diff --git a/flutter/lib/models/group_model.dart b/flutter/lib/models/group_model.dart
+index d55cff4..d378b74 100644
+--- a/flutter/lib/models/group_model.dart
++++ b/flutter/lib/models/group_model.dart
+@@ -6,7 +6,9 @@ import 'package:flutter_hbb/models/model.dart';
+ import 'package:flutter_hbb/models/peer_model.dart';
+ import 'package:flutter_hbb/models/platform_model.dart';
+ import 'package:get/get.dart';
++import 'dart:async'; // SOFORTREFRESH
+ import 'dart:convert';
++import 'package:flutter_hbb/models/state_model.dart'; // SOFORTREFRESH
+ import '../utils/http_service.dart' as http;
+ 
+ class GroupModel {
+@@ -23,6 +25,22 @@ class GroupModel {
+   var _cacheLoadOnceFlag = false;
+   var _statusCode = 200;
+ 
++  // SOFORTREFRESH: periodic, silent reload of the device list.
++  // Controlled by the custom client config key below, value in seconds.
++  // Missing / unparsable -> built-in default. 0 or negative -> switched off,
++  // behaviour is then byte-for-byte the upstream one.
++  static const String kDeviceListRefreshIntervalKey =
++      'device-list-refresh-interval';
++  static const int kDeviceListRefreshDefaultSeconds = 60;
++  static const int kDeviceListRefreshMinSeconds = 30;
++  static const int kDeviceListRefreshMaxSeconds = 3600;
++  Timer? _autoRefreshTimer;
++  int _autoRefreshTick = 0;
++  bool _autoRefreshSuspended = false;
++  // SOFORTREFRESH: real re-entry guard. groupLoading is only set when
++  // quiet == false, so it does not protect the silent timer path.
++  var _pulling = false;
++
+   final Map<String, VoidCallback> _peerIdUpdateListeners = {};
+ 
+   bool get emtpy => deviceGroups.isEmpty && users.isEmpty && peers.isEmpty;
+@@ -34,13 +52,72 @@ class GroupModel {
+         name: PeersModelName.group,
+         getInitPeers: () => peers,
+         loadEvent: LoadEvent.group);
++    // SOFORTREFRESH: only the main desktop window owns a timer. Session and
++    // connection-manager windows have their own FFI instance with a different
++    // desktopType, mobile/web leave desktopType null. Same guard AbModel uses.
++    if (desktopType == DesktopType.main) {
++      _startAutoRefresh();
++    }
++  }
++
++  // SOFORTREFRESH: read fresh on every tick. get_option() serves from an
++  // in-memory map, so this is cheap, and a value pushed later through the
++  // hbbs 'strategy' channel takes effect without a restart.
++  int get _autoRefreshIntervalSeconds {
++    try {
++      final raw = bind.mainGetOptionSync(key: kDeviceListRefreshIntervalKey);
++      final trimmed = raw.trim();
++      if (trimmed.isEmpty) return kDeviceListRefreshDefaultSeconds;
++      final n = int.tryParse(trimmed);
++      if (n == null) return kDeviceListRefreshDefaultSeconds;
++      if (n <= 0) return 0;
++      if (n < kDeviceListRefreshMinSeconds) return kDeviceListRefreshMinSeconds;
++      if (n > kDeviceListRefreshMaxSeconds) return kDeviceListRefreshMaxSeconds;
++      return n;
++    } catch (e) {
++      debugPrint('SOFORTREFRESH read interval: $e');
++      return kDeviceListRefreshDefaultSeconds;
++    }
+   }
+ 
+-  Future<void> pull({force = true, quiet = false}) async {
++  // SOFORTREFRESH: 1 s heartbeat plus a counter, the way AbModel does it.
++  // A short tick keeps the interval changeable at runtime and makes a logout
++  // or a switch-off take effect at once instead of after a whole interval.
++  void _startAutoRefresh() {
++    _autoRefreshTimer?.cancel();
++    _autoRefreshTimer =
++        Timer.periodic(const Duration(seconds: 1), (timer) async {
++      final interval = _autoRefreshIntervalSeconds;
++      if (interval <= 0) {
++        _autoRefreshTick = 0;
++        return;
++      }
++      // A dead token suspends the timer instead of logging the operator out,
++      // see the byTimer branch in pull().
++      if (_autoRefreshSuspended) return;
++      if (stateGlobal.isMinimized) {
++        // Do not poll while minimized, but refresh right after it comes back.
++        _autoRefreshTick = interval;
++        return;
++      }
++      if (!gFFI.userModel.isLogin) {
++        _autoRefreshTick = 0;
++        return;
++      }
++      _autoRefreshTick++;
++      if (_autoRefreshTick < interval) return;
++      _autoRefreshTick = 0;
++      await pull(quiet: true, byTimer: true);
++    });
++  }
++
++  Future<void> pull({force = true, quiet = false, byTimer = false}) async {
+     if (bind.isDisableGroupPanel()) return;
+     if (!gFFI.userModel.isLogin || groupLoading.value) return;
++    if (_pulling) return; // SOFORTREFRESH re-entry guard, see field comment
+     if (gFFI.userModel.networkError.isNotEmpty) return;
+     if (!force && initialized) return;
++    _pulling = true; // SOFORTREFRESH
+     if (!quiet) {
+       groupLoading.value = true;
+       groupLoadError.value = "";
+@@ -50,13 +127,26 @@ class GroupModel {
+       _tryHandlePullError();
+     } catch (e) {
+       print("pull accessibles error: $e");
++    } finally {
++      _pulling = false; // SOFORTREFRESH
+     }
+     groupLoading.value = false;
+     initialized = true;
+     platformFFI.tryHandle({'name': LoadEvent.group});
+     if (_statusCode == 401) {
+-      gFFI.userModel.reset(resetOther: true);
++      if (byTimer) {
++        // SOFORTREFRESH: a background pull must NEVER log the operator out.
++        // Keep the list as it is, skip the cache write, stop polling with a
++        // dead token, and show the error string that already exists in every
++        // language file. The next manual refresh takes the unchanged path
++        // below and logs out deliberately, with the operator watching.
++        _autoRefreshSuspended = true;
++        groupLoadError.value = translate('pull_group_failed_tip');
++      } else {
++        gFFI.userModel.reset(resetOther: true);
++      }
+     } else {
++      _autoRefreshSuspended = false; // SOFORTREFRESH
+       _saveCache();
+     }
+   }
+@@ -344,6 +434,9 @@ class GroupModel {
+ 
+   reset() async {
+     initialized = false;
++    // SOFORTREFRESH: a fresh login must be able to poll again.
++    _autoRefreshSuspended = false;
++    _autoRefreshTick = 0;
+     groupLoadError.value = '';
+     deviceGroups.clear();
+     users.clear();

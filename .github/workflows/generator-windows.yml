@@ -445,6 +445,24 @@ jobs:
             Invoke-WebRequest -Uri https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/xoffline.diff -OutFile xoffline.diff
             git apply xoffline.diff
 
+      # SOFORTREFRESH: reload the device list on a timer.
+      # Deliberately NO `if:` gate and NO `continue_on_error` --- the feature
+      # is switched at runtime through the config key
+      # `device-list-refresh-interval` (0 = off), and a patch that fails to
+      # apply MUST break the build instead of shipping a client that silently
+      # lacks the feature. See projekte/SOFORTREFRESH-bau.md.
+      - name: auto refresh device list (SOFORTREFRESH)
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_wait_seconds: 15
+          shell: bash
+          command: |
+            curl -fsSL -o autoRefreshDeviceList.diff https://raw.githubusercontent.com/DragonFly125/rdgen/refs/heads/master/.github/patches/autoRefreshDeviceList.diff
+            sha256sum autoRefreshDeviceList.diff
+            git apply --verbose autoRefreshDeviceList.diff
+
       - name: removeNewVersionNotif
         continue-on-error: true
         if: env.removeNewVersionNotif == 'true'
@@ -490,6 +508,55 @@ jobs:
           } else {
             Write-Host "Error: printer-adapter folder not found in repository."
           }
+
+      # SOFORTREFRESH stage 1 of the tripwire: run AFTER every sed/patch step
+      # and BEFORE the compiler, because later steps also rewrite dart files.
+      # Counts markers instead of asking "is something there" --- a scan that
+      # can only answer "at least one" has already failed silently in this
+      # house once.
+      - name: verify SOFORTREFRESH patch is in the source
+        shell: bash
+        run: |
+          set -uo pipefail
+          f=./flutter/lib/models/group_model.dart
+          if [ ! -f "$f" ]; then
+            echo "SOFORTREFRESH FAIL: $f does not exist"
+            exit 1
+          fi
+          fail=0
+          expect() {
+            n=$(grep -cF -- "$1" "$f" || true)
+            if [ "$n" != "$2" ]; then
+              echo "SOFORTREFRESH FAIL: '$1' found $n times, expected $2"
+              fail=1
+            else
+              echo "SOFORTREFRESH ok:   '$1' x$n"
+            fi
+          }
+          expect 'SOFORTREFRESH'                              14
+          expect 'device-list-refresh-interval'                1
+          expect '_startAutoRefresh'                           2
+          expect 'byTimer'                                     4
+          expect '_pulling'                                    4
+          expect '_autoRefreshSuspended'                       5
+          expect '_autoRefreshTick'                            8
+          expect 'Timer.periodic(const Duration(seconds: 1)'   1
+          if [ "$fail" != "0" ]; then
+            echo "SOFORTREFRESH: the auto-refresh patch is NOT (fully) present."
+            echo "Refusing to build a client that would silently lack the feature."
+            exit 1
+          fi
+          echo "SOFORTREFRESH: all markers present, build may continue."
+          {
+            echo "### SOFORTREFRESH"
+            echo ""
+            echo "| item | value |"
+            echo "| --- | --- |"
+            echo "| rustdesk tag | ${VERSION:-unknown} |"
+            echo "| rustdesk commit | $(git rev-parse HEAD 2>/dev/null || echo unknown) |"
+            echo "| patch sha256 | $(sha256sum autoRefreshDeviceList.diff 2>/dev/null | cut -d' ' -f1) |"
+            echo "| markers in group_model.dart | $(grep -cF SOFORTREFRESH "$f") |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build rustdesk
         run: |
