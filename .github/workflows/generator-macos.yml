@@ -79,7 +79,22 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        
+
+      # BURNIN-MAC 2026-09-30. Der spaetere "Checkout source code"-Schritt
+      # holt rustdesk/rustdesk in DENSELBEN Arbeitsbereich und raeumt ihn
+      # dabei ab -- die Dateien dieses Repos sind danach weg. Genau deshalb
+      # laedt der Schritt "allow custom.txt" allowCustom.py ueber das Netz
+      # nachtraeglich herunter, obwohl eine Kopie im Repo liegt.
+      # Hier wird der Patch stattdessen VORHER beiseitegelegt: kein
+      # Netzzugriff, keine Bindung an einen Zweignamen, und Ablauf und
+      # Patch koennen nicht auseinanderlaufen.
+      - name: Stage local patch scripts (survive the rustdesk checkout)
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/rdgen-patches"
+          cp .github/patches/burnInSettings.py "$RUNNER_TEMP/rdgen-patches/"
+          shasum -a 256 "$RUNNER_TEMP/rdgen-patches/burnInSettings.py"
+
       - uses: actions/download-artifact@v4
         with:
           name: encrypted-secrets-zip
@@ -219,7 +234,36 @@ jobs:
             git apply removeSetupServerTip.diff
             # sed -i '/intl:/a \ \ archive: ^3.6.1' ./flutter/pubspec.yaml
             sed -i -e 's|https://admin.rustdesk.com|${{ env.apiServer }}|' ./src/common.rs
-          
+
+      # BURNIN-MAC 2026-09-30. Der macOS-Client wertet die Laufzeitdatei
+      # custom_.txt nachweislich NICHT aus (bryangerlach/rdgen Issue #278,
+      # offen seit 2026-08-06, vier unabhaengige Melder, zwei gescheiterte
+      # Blindkorrekturen). Folge: die Soforthilfe zeigt die volle
+      # Standardoberflaeche statt der Minimalansicht, und der
+      # Dauerinstallation fehlt die Netzwerksperre (hide-network-settings).
+      # Deshalb werden die Einstellungen hier zur UEBERSETZUNGSZEIT in
+      # config.rs eingebrannt -- dasselbe Verfahren, das fuer Windows seit
+      # 2026-09-23 laeuft (bau-lokal.ps1 Schritt 3c, 5 Abnahmezyklen).
+      # Die Werte kommen aus env.custom, nicht aus einer zweiten Liste:
+      # die RDGen-Parameter bleiben die eine Quelle der Wahrheit.
+      # KEIN continue-on-error und KEIN "|| true": ein gruener Bau mit
+      # wirkungslosem Erzeugnis ist genau der Fehler, der hier behoben wird.
+      # Bewusst NICHT in nick-fields/retry gewickelt -- der Patch ist
+      # absichtlich nicht wiederholbar (zweiter Lauf = harter Abbruch),
+      # ein Wiederholungsversuch wuerde also nur verwirren. Er braucht auch
+      # keine Wiederholung: das Skript liegt seit dem Schritt
+      # "Stage local patch scripts" oertlich vor, es gibt keinen Netzzugriff.
+      - name: Burn client settings into config.rs (BURNIN-MAC, Issue #278)
+        shell: bash
+        env:
+          CUSTOM_B64: ${{ env.custom }}
+        run: |
+          # shasum, NICHT sha256sum: letzteres ist coreutils und auf den
+          # macOS-Laeufern nicht vorhanden (der Windows-Ablauf benutzt
+          # sha256sum, das laesst sich hier nicht abschreiben).
+          shasum -a 256 "$RUNNER_TEMP/rdgen-patches/burnInSettings.py"
+          python3 "$RUNNER_TEMP/rdgen-patches/burnInSettings.py"
+
       - name: Install build runtime
         run: |
           brew install llvm create-dmg
