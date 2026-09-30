@@ -1,12 +1,19 @@
 name: update docker image
 
+# PUSHTRIGGER 2026-09-30. Dieser Ablauf stammt vom urspruenglichen Autor
+# und kann in dieser Abspaltung nur scheitern: er meldet sich bei Docker Hub
+# mit Zugangsdaten an, die hier nicht hinterlegt sind (GitHub reicht
+# Geheimnisse nie an eine Abspaltung weiter -- es ist eine Anmeldung mit
+# LEEREN Feldern, kein Zugriff auf fremde Zugangsdaten).
+# Am 2026-09-19 hat genau das beim SOFORTREFRESH-Push eine Fehlermail an
+# den Betreiber ausgeloest, fuer etwas, das er nicht angestossen hat und
+# das ihn nichts angeht. Der eigentliche Schaden ist nicht die eine Mail,
+# sondern das Abstumpfen: wer drei nutzlose Meldungen bekommt, liest die
+# vierte nicht mehr -- und die waere die echte gewesen.
+# Deshalb laeuft er nur noch auf ausdruecklichen Zuruf, nicht mehr von
+# selbst bei jedem Push.
 on:
-  push:
-    branches:
-      - dev
-      - master
-    tags:
-      - 'v*.*.*'
+  workflow_dispatch:
 
 jobs:
   build:
