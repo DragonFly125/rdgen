@@ -93,7 +93,9 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/rdgen-patches"
           cp .github/patches/burnInSettings.py "$RUNNER_TEMP/rdgen-patches/"
-          shasum -a 256 "$RUNNER_TEMP/rdgen-patches/burnInSettings.py"
+          cp .github/patches/pruefeKonfigPfad.py "$RUNNER_TEMP/rdgen-patches/"
+          cp .github/patches/pruefeKonfigWirksam.py "$RUNNER_TEMP/rdgen-patches/"
+          shasum -a 256 "$RUNNER_TEMP/rdgen-patches/"*.py
 
       - uses: actions/download-artifact@v4
         with:
@@ -235,6 +237,21 @@ jobs:
             # sed -i '/intl:/a \ \ archive: ^3.6.1' ./flutter/pubspec.yaml
             sed -i -e 's|https://admin.rustdesk.com|${{ env.apiServer }}|' ./src/common.rs
 
+      # MACCUSTOMPFAD 2026-10-01 -- die eigentliche Ursache von Issue #278.
+      # load_custom_client() (src/common.rs) sucht die Laufzeitdatei auf
+      # macOS unter <exe-Verzeichnis>/../Resources/custom_.txt, also unter
+      # <App>.app/Contents/Resources/custom_.txt. Der Schritt "Embed custom
+      # config" legte sie aber nach Contents/MacOS/ -- falscher Ordner.
+      # Auf Windows faellt derselbe Code nicht auf, weil es dort kein
+      # "../Resources" gibt und die Datei neben der EXE liegt.
+      # Dieser Schritt liest den Ort AUS DEM QUELLTEXT (nach allowCustom.py)
+      # und reicht ihn als CUSTOM_BUNDLE_PATH weiter, statt ihn irgendwo im
+      # Ablauf ein zweites Mal hinzuschreiben. Aendert RustDesk den Ort,
+      # bricht der Bau ab, statt still eine wirkungslose Datei zu packen.
+      - name: Ablageort der Laufzeitkonfiguration aus dem Quelltext ableiten
+        shell: bash
+        run: python3 "$RUNNER_TEMP/rdgen-patches/pruefeKonfigPfad.py"
+
       # BURNIN-MAC 2026-09-30. Der macOS-Client wertet die Laufzeitdatei
       # custom_.txt nachweislich NICHT aus (bryangerlach/rdgen Issue #278,
       # offen seit 2026-08-06, vier unabhaengige Melder, zwei gescheiterte
@@ -257,6 +274,10 @@ jobs:
         shell: bash
         env:
           CUSTOM_B64: ${{ env.custom }}
+          # Marker fuer die Abnahme am fertigen Buendel. Nur Schluessel, die
+          # es im unveraenderten Quelltext NICHT gibt -- alles andere steht
+          # ohnehin als OPTION_*-Konstante im Binaerstamm und beweist nichts.
+          BURNIN_MARKER_OUT: ${{ runner.temp }}/rdgen-patches/burnin-marker.txt
         run: |
           # shasum, NICHT sha256sum: letzteres ist coreutils und auf den
           # macOS-Laeufern nicht vorhanden (der Windows-Ablauf benutzt
@@ -541,11 +562,42 @@ jobs:
       - name: Embed custom config into the .app bundle
         shell: bash
         run: |
+          set -e
           APP=$(find ./flutter/build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -n 1)
           echo "App bundle: $APP"
+          if [ -z "$CUSTOM_BUNDLE_PATH" ]; then
+            echo "FEHLER: CUSTOM_BUNDLE_PATH ist nicht gesetzt." >&2
+            echo "Der Schritt 'Ablageort der Laufzeitkonfiguration aus dem" >&2
+            echo "Quelltext ableiten' ist nicht gelaufen." >&2
+            exit 1
+          fi
+          # MACCUSTOMPFAD: an den Ort, den load_custom_client() wirklich
+          # durchsucht. Der alte Ort Contents/MacOS/ wird zusaetzlich
+          # weiterbeschrieben -- er schadet nicht, und mehrere Werkzeuge in
+          # diesem Haus sehen dort nach.
+          mkdir -p "$APP/$(dirname "$CUSTOM_BUNDLE_PATH")"
+          echo -n '${{ env.custom }}' > "$APP/$CUSTOM_BUNDLE_PATH"
           echo -n '${{ env.custom }}' > "$APP/Contents/MacOS/custom_.txt"
-          ls -l "$APP/Contents/MacOS/custom_.txt"
-      
+          ls -l "$APP/$CUSTOM_BUNDLE_PATH" "$APP/Contents/MacOS/custom_.txt"
+
+      # MACCUSTOMPFAD 2026-10-01 -- Abnahme AM ERZEUGNIS, nicht an der
+      # Absicht. Am 2026-10-01 lieferte ein vollstaendig gruener Bau einen
+      # x86_64-Client aus, in dem KEINE der 15 Minimalansicht-Einstellungen
+      # angekommen war, waehrend aarch64 aus derselben Quelle in Ordnung
+      # war. Die Gegenprobe des Einbrenn-Schritts prueft die QUELLE und kann
+      # einen Verlust beim Uebersetzen/Binden grundsaetzlich nicht sehen.
+      # Dieser Schritt misst das fertige Buendel und bricht ab, wenn die
+      # Konfiguration auf KEINEM der beiden Wege darin steckt.
+      - name: Wirksamkeit der Kundenkonfiguration am Buendel pruefen
+        shell: bash
+        env:
+          BURNIN_MARKER_FILE: ${{ runner.temp }}/rdgen-patches/burnin-marker.txt
+        run: |
+          set -e
+          APP=$(find ./flutter/build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -n 1)
+          python3 "$RUNNER_TEMP/rdgen-patches/pruefeKonfigWirksam.py" "$APP"
+
+
       - name: Install rcodesign tool
         if: env.MACOS_P12_BASE64 != null
         shell: bash

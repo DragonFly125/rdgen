@@ -312,6 +312,58 @@ def main():
             "config.rs: %s" % (len(fehlend), ", ".join(fehlend[:10]))
         )
 
+    # --- Marker fuer die Abnahme AM ERZEUGNIS ---------------------------
+    # Die Gegenpruefung oben prueft die QUELLE. Sie kann einen Verlust
+    # beim Uebersetzen/Binden grundsaetzlich nicht sehen -- genau das ist
+    # am 2026-10-01 auf x86_64-apple-darwin passiert (siehe
+    # BEENDEN-X86-FIX-2026-10-01.md). Deshalb werden hier Zeichenketten
+    # bestimmt, die es im unveraenderten Rust-Quelltext NICHT gibt; nur
+    # mit denen laesst sich spaeter am fertigen Buendel messen, ob das
+    # Einbrennen ueberhaupt angekommen ist.
+    #
+    # Ein Schluessel wie hide-network-settings taugt NICHT als Marker: er
+    # steht ohnehin als Wert einer OPTION_*-Konstante im Binaerstamm, auch
+    # ohne jedes Einbrennen. Genau diese Verwechslung hat den Fehler am
+    # 2026-09-30 verdeckt.
+    marker_ziel = os.environ.get("BURNIN_MARKER_OUT", "")
+    if marker_ziel:
+        rust_text = [src]  # config.rs im ZUSTAND VOR dem Einbrennen
+        for wurzel, verz, dateien in os.walk("."):
+            verz[:] = [
+                d for d in verz if d not in (".git", "target", "node_modules")
+            ]
+            for d in dateien:
+                if not d.endswith(".rs"):
+                    continue
+                pf = os.path.join(wurzel, d)
+                if os.path.abspath(pf) == os.path.abspath(cfg_pfad):
+                    continue  # steht schon als Originaltext in der Liste
+                try:
+                    rust_text.append(open(pf, "r", encoding="utf-8",
+                                          errors="replace").read())
+                except OSError:
+                    pass
+        gesamttext = "\n".join(rust_text)
+        kandidaten = []
+        for name in STORES:
+            for k in ziel[name]:
+                if len(k) >= 8 and k not in kandidaten:
+                    kandidaten.append(k)
+        exklusiv = [k for k in kandidaten if k not in gesamttext]
+        with open(marker_ziel, "w", encoding="utf-8") as f:
+            f.write("\n".join(exklusiv[:8]))
+        print(
+            "  Abnahme-Marker (nur im Quelltext NICHT vorhandene "
+            "Schluessel): %d von %d Kandidaten"
+            % (len(exklusiv[:8]), len(kandidaten))
+        )
+        if not exklusiv:
+            print(
+                "  HINWEIS: kein einbrenn-exklusiver Marker vorhanden. Die "
+                "Abnahme am Erzeugnis kann die Einbrennung dann nicht "
+                "nachweisen und stuetzt sich allein auf die Laufzeitdatei."
+            )
+
     # --- Bericht (keine Werte, die ein Geheimnis sein koennten) ---------
     print("Eingebrannte Clientkonfiguration (%s):" % cfg_pfad)
     gesamt = 0
