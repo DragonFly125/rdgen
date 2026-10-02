@@ -99,6 +99,7 @@ jobs:
           cp .github/patches/setzeMarkenLink.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/gefuehrteBerechtigung.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/beendenKnopfImmer.py "$RUNNER_TEMP/rdgen-patches/"
+          cp .github/patches/setzeBuendelkennzeichner.py "$RUNNER_TEMP/rdgen-patches/"
           shasum -a 256 "$RUNNER_TEMP/rdgen-patches/"*.py
 
       - uses: actions/download-artifact@v4
@@ -174,7 +175,16 @@ jobs:
           
           # Update Xcode project settings
           sed -i '' -e 's/PRODUCT_NAME = "RustDesk"/PRODUCT_NAME = "${{ env.appname }}"/' ./flutter/macos/Runner.xcodeproj/project.pbxproj
-          sed -i '' -e 's/PRODUCT_BUNDLE_IDENTIFIER = ".*"/PRODUCT_BUNDLE_IDENTIFIER = "com.${{ env.appname }}.app"/' ./flutter/macos/Runner.xcodeproj/project.pbxproj
+          # BUENDELKENNZEICHNER 2026-10-02: Der sed, der hier stand, konnte
+          # nie treffen. Er verlangte
+          #   PRODUCT_BUNDLE_IDENTIFIER = "..."
+          # mit doppelten Anfuehrungszeichen; in project.pbxproj steht
+          #   PRODUCT_BUNDLE_IDENTIFIER = com.carriez.rustdesk;
+          # ohne Anfuehrungszeichen. Ergebnis: gruener Bau, und das
+          # ausgelieferte Buendel traegt weiter com.carriez.rustdesk
+          # (am IT.EckSe-DMG vom 02.10. mit plistlib nachgemessen).
+          # Die Ersetzung macht jetzt setzeBuendelkennzeichner.py weiter
+          # unten -- mit Pruefung des Namens und Gegenlesen.
 
           # Update CMake settings
           if [ -f "./flutter/macos/CMakeLists.txt" ]; then
@@ -223,6 +233,16 @@ jobs:
           MARKEN_URL: "https://it-labuhn.de"
           MARKEN_PRAEFIX: "IT-Labuhn"
         run: python3 "$RUNNER_TEMP/rdgen-patches/setzeMarkenLink.py"
+
+      # BUENDELKENNZEICHNER 2026-10-02. Muss VOR dem Bauen laufen, weil
+      # Xcode CFBundleIdentifier aus der Bau-Einstellung einsetzt
+      # ($(PRODUCT_BUNDLE_IDENTIFIER) in Info.plist). Bewusst hier oben,
+      # damit ein ungueltiger appname Sekunden kostet und nicht 40 Minuten.
+      - name: Buendelkennzeichner setzen (BUENDELKENNZEICHNER)
+        shell: bash
+        env:
+          APPNAME: ${{ env.appname }}
+        run: python3 "$RUNNER_TEMP/rdgen-patches/setzeBuendelkennzeichner.py"
 
       # BEENDENKNOPF 2026-10-02. Der "Beenden"-Knopf stand als letzte
       # Anweisung in buildHelpCards() und wurde deshalb auf jedem Mac
