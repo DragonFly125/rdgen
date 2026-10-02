@@ -97,6 +97,7 @@ jobs:
           cp .github/patches/pruefeKonfigWirksam.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/entferneEinstellungsknopf.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/setzeMarkenLink.py "$RUNNER_TEMP/rdgen-patches/"
+          cp .github/patches/keinInstallSoforthilfe.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/gefuehrteBerechtigung.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/beendenKnopfImmer.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/setzeBuendelkennzeichner.py "$RUNNER_TEMP/rdgen-patches/"
@@ -346,7 +347,41 @@ jobs:
           echo "  archive: ^3.6.1" > ./flutter/temp_dependency.txt
           awk '/intl:/{print;system("cat ./flutter/temp_dependency.txt");next}1' ./flutter/pubspec.yaml > ./flutter/pubspec.yaml.tmp
           mv ./flutter/pubspec.yaml.tmp ./flutter/pubspec.yaml
-          rm ./flutter/temp_dependency.txt 
+          rm ./flutter/temp_dependency.txt
+
+      # KEININSTALL 2026-10-02. Masters Ansage nach dem Test des ersten
+      # echten Kundenbaus auf seinem eigenen Mac: im Soforthilfe-Fenster
+      # stand ein pinkes Band "Um mit System zu starten, muss der
+      # Systemdienst installiert sein." mit einem Knopf "Installieren".
+      # Weder soll installiert werden, noch soll ueberhaupt danach gefragt
+      # werden -- eine eingehende, einmalige Hilfesitzung soll auf dem
+      # Kundenrechner nichts zuruecklassen.
+      #
+      # Der Daemon-Zweig in buildHelpCards kennt einen
+      # isOutgoingOnly-Vorbehalt, aber keinen fuer isIncomingOnly; upstream
+      # denkt dort an den Dauerclient. Der Schritt sperrt ihn fuer
+      # conn-type=incoming, und zwar als ERSTE &&-Bedingung: Dart
+      # kurzschliesst, mainIsInstalledDaemon wird nicht mehr aufgerufen,
+      # die Karte nicht gebaut, der Installationsvorgang nicht ausgeloest.
+      # Das ist keine optische Unterdrueckung.
+      #
+      # WARUM DER SCHRITT HIER STEHT UND NICHT DIREKT HINTER
+      # "GEFUEHRTE BERECHTIGUNG", wo er thematisch hingehoert:
+      # Das Skript muss NACH gefuehrteBerechtigung.py laufen (einer seiner
+      # beiden Anker ist die von dort verlaengerte
+      # hide-help-cards-Bedingung) -- das tut es auch hier. Haette der
+      # Schritt direkt dahinter gestanden, waere er mit dem gleichzeitig
+      # entstandenen KEINMIKROFON-Patch auf dieselbe Einfuegestelle
+      # getroffen, und beide waeren nur noch in EINER Reihenfolge
+      # anwendbar. An dieser Stelle sind sie voneinander unabhaengig.
+      #
+      # Kein continue-on-error, kein if:. Ein verfehlter Anker muss den Bau
+      # anhalten, statt stillschweigend ein Erzeugnis mit dem Mangel zu
+      # erzeugen. Und bewusst VOR "Build rustdesk", damit das Sekunden
+      # kostet und nicht 40 Minuten.
+      - name: Keine Installationsabfrage in der Soforthilfe (KEININSTALL)
+        shell: bash
+        run: python3 "$RUNNER_TEMP/rdgen-patches/keinInstallSoforthilfe.py"
 
       - name: allow custom.txt
         uses: nick-fields/retry@v3
