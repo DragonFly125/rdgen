@@ -100,6 +100,7 @@ jobs:
           cp .github/patches/gefuehrteBerechtigung.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/beendenKnopfImmer.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/setzeBuendelkennzeichner.py "$RUNNER_TEMP/rdgen-patches/"
+          cp .github/patches/keinMikrofon.py "$RUNNER_TEMP/rdgen-patches/"
           shasum -a 256 "$RUNNER_TEMP/rdgen-patches/"*.py
 
       - uses: actions/download-artifact@v4
@@ -286,6 +287,37 @@ jobs:
       - name: Gefuehrte macOS-Freigabe einbauen (GEFUEHRTE BERECHTIGUNG)
         shell: bash
         run: python3 "$RUNNER_TEMP/rdgen-patches/gefuehrteBerechtigung.py"
+
+      # KEINMIKROFON 2026-10-02. Master nach dem Test des ersten echten
+      # Kundenbaus auf seinem eigenen Mac: "nach dem microfon soll nicht
+      # gefragt werden von der app das wird nicht benoetigt."
+      #
+      # Die Abfrage kommt nicht aus einem Aufruf, den man abschalten
+      # koennte. RustDesk ruft auf macOS KEIN AVCaptureDevice.requestAccess
+      # auf -- der Dialog entsteht passiv, sobald CoreAudio den
+      # Eingabestrom oeffnet. Und geoeffnet wird auf dem Mac das
+      # Standard-EINGABE-Geraet, also das Mikrofon: cpal kennt dort kein
+      # Loopback (steht so im Kopfkommentar von audio_service.rs).
+      # Auf dem x86_64-Bau ist das der einzige Weg, auf dem aarch64-Bau der
+      # Rueckfall, wenn ScreenCaptureKit nicht verfuegbar ist.
+      #
+      # Der Schritt schneidet deshalb den WEG zum Geraet ab statt eine
+      # Abfrage zu unterdruecken, und entfernt erst danach
+      # NSMicrophoneUsageDescription aus der Info.plist. Die Reihenfolge
+      # ist nicht beliebig: ein Zugriff OHNE diesen Schluessel ist kein
+      # stiller Verzicht, sondern ein Abschuss der App durch das System.
+      # Deshalb erst der Code, dann die plist -- und deshalb beides im
+      # selben Schritt, damit niemand nur die Haelfte uebernimmt.
+      #
+      # Der ScreenCaptureKit-Weg (Systemton, haengt an der Freigabe
+      # "Bildschirm- & Systemaudioaufnahme") bleibt unveraendert.
+      #
+      # KEIN continue-on-error, KEIN if:, KEIN "|| true" -- und bewusst
+      # VOR dem Bauen, damit ein verfehlter Anker Sekunden kostet und
+      # nicht 40 Minuten.
+      - name: Mikrofon-Abfrage entfernen (KEINMIKROFON)
+        shell: bash
+        run: python3 "$RUNNER_TEMP/rdgen-patches/keinMikrofon.py"
 
       - name: change download link to custom
         if: env.downloadLink != 'https://rustdesk.com/download'
