@@ -98,6 +98,7 @@ jobs:
           cp .github/patches/entferneEinstellungsknopf.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/setzeMarkenLink.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/gefuehrteBerechtigung.py "$RUNNER_TEMP/rdgen-patches/"
+          cp .github/patches/beendenKnopfImmer.py "$RUNNER_TEMP/rdgen-patches/"
           shasum -a 256 "$RUNNER_TEMP/rdgen-patches/"*.py
 
       - uses: actions/download-artifact@v4
@@ -222,6 +223,18 @@ jobs:
           MARKEN_URL: "https://it-labuhn.de"
           MARKEN_PRAEFIX: "IT-Labuhn"
         run: python3 "$RUNNER_TEMP/rdgen-patches/setzeMarkenLink.py"
+
+      # BEENDENKNOPF 2026-10-02. Der "Beenden"-Knopf stand als letzte
+      # Anweisung in buildHelpCards() und wurde deshalb auf jedem Mac
+      # uebersprungen, auf dem noch eine TCC-Freigabe fehlte -- der
+      # macOS-Zweig kehrt dann vorher mit einer Berechtigungskarte zurueck.
+      # Bei hide-help-cards=Y (steht in der eingebrannten Konfiguration
+      # dieses Kundenbaus) ist diese Karte zusaetzlich ein unsichtbares
+      # SizedBox(): der Kunde sah weder einen Hinweis noch den Knopf.
+      # Der Schritt zieht den Knopf in eine Umhuellung, die immer zeichnet.
+      - name: Beenden-Knopf auf macOS immer zeigen (BEENDENKNOPF)
+        shell: bash
+        run: python3 "$RUNNER_TEMP/rdgen-patches/beendenKnopfImmer.py"
 
       # GEFUEHRTE BERECHTIGUNG 2026-10-02. Masters Auftrag: "man oeffnet die
       # App und wird dazu aufgefordert, die beiden Sachen freizugeben -- von
