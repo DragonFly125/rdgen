@@ -230,7 +230,13 @@ jobs:
         env:
           APPNAME: ${{ env.appname }}
           URLLINK: ${{ env.urlLink }}
-          MARKEN_URL: "https://it-labuhn.de"
+          # 2026-10-02 korrigiert: war https://it-labuhn.de. Dieses Ziel ist
+          # oeffentlich per HTTP-Basic-Auth gesperrt (gemessen: HTTP 401),
+          # der Kunde bekaeme beim Antippen eine Passwortabfrage.
+          # remote.it-labuhn.de ist die Kundenkonsole, oeffentlich
+          # erreichbar (gemessen: HTTP 302 auf die Anmeldung) und traegt
+          # Impressum und Datenschutzerklaerung.
+          MARKEN_URL: "https://remote.it-labuhn.de"
           MARKEN_PRAEFIX: "IT-Labuhn"
         run: python3 "$RUNNER_TEMP/rdgen-patches/setzeMarkenLink.py"
 
