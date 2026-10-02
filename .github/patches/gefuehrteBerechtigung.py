@@ -967,32 +967,69 @@ def pruefe_dart():
 # (src/lang.rs Z. 254-266) -- 51 Sprachdateien anzufassen waere Umfang, den
 # niemand bestellt hat.
 #
-# KEINE der neuen Zeichenketten enthaelt "RustDesk". Der sed des Ablaufs
-# (generator-macos.yml Z. 185) schreibt diesen Namen in allen lang-Dateien
-# um; neue Texte mit dem Wort darin waeren eine zweite Stelle, an der der
-# Anzeigename auseinanderlaufen kann. Den Namen liefert ohnehin die
-# Begruendung (config_acc / config_screen / config_input), die ihn schon
-# traegt.
+# KEINE der neuen Zeichenketten enthaelt "RustDesk". Den Namen liefert
+# ohnehin die Begruendung (config_acc / config_screen / config_input), die
+# ihn schon traegt; ein zweites Vorkommen waere eine zweite Stelle, an der
+# der Anzeigename auseinanderlaufen kann.
+#
+# ----------------------------------------------------------------------
+# DER ANKER IST DER SCHLUESSEL, NIE DER TEXT -- hier teuer gelernt.
+#
+# Die erste Fassung verankerte auf der GANZEN Zeile, einschliesslich des
+# uebersetzten Satzes. Lokal gegen den unveraenderten 1.4.9-Baum lief
+# das. Im Ablauf brach es ab, auf beiden Architekturen:
+#
+#   GEFUEHRTEBERECHTIGUNG FEHLER: src/lang/en.rs: Anker fuer lang-Anker
+#   en kommt 0 mal vor, erwartet genau 1.
+#
+# Ursache ist kein Tippfehler, sondern die REIHENFOLGE im Ablauf.
+# generator-macos.yml fuehrt im Schritt "Update macOS Info.plist and
+# settings" aus:
+#
+#   find ./src/lang -name "*.rs" -exec sed -i '' -e 's|RustDesk|<appname>|' {} \\;
+#
+# Dieser Schritt steht VOR dem Schritt, der dieses Skript aufruft. Wenn
+# das Skript laeuft, heisst "RustDesk" in en.rs/de.rs also laengst
+# IT-Labuhn-Soforthilfe. Ein Anker mit dem Wort "RustDesk" darin KANN
+# dort nicht mehr treffen.
+#
+# Besonders aergerlich: der Absatz darueber nannte genau diesen sed. Es
+# wurde ueber die AUSGABE nachgedacht (die neuen Texte enthalten kein
+# "RustDesk") und die EINGABE vergessen (der Anker enthielt es).
+#
+# Die Lehre ist die bekannte, nur eine Ebene hoeher: ein Patcher wird
+# nicht gegen den unveraenderten Baum geprueft, sondern gegen den Baum
+# IN DEM ZUSTAND, IN DEM ER IHN IM ABLAUF VORFINDET. Dafuer gibt es
+# jetzt simuliereAblauf.sh, das die vorangehenden Schritte abspielt.
+#
+# Daraus die Regel, die dieses Skript jetzt einhaelt: verankert wird am
+# Uebersetzungs-SCHLUESSEL, den das Branding nie anfasst -- nie am
+# uebersetzten Text, der es immer werden kann. Die Einfuegung ist
+# zeilenweise und liest den Text ueberhaupt nicht.
+# ----------------------------------------------------------------------
 
-EN_ANKER = '        ("config_input", "In order to control remote desktop with keyboard, you need to grant RustDesk \\"Input Monitoring\\" permissions."),\n'
+# Nur der Schluessel. Unveraenderlich gegenueber jedem Branding-sed.
+LANG_ANKER = '("config_input",'
 
-EN_NEU = EN_ANKER + """        ("guided_step", "Step"),
-        ("guided_step_of", "of"),
-        ("guided_perm_acc", "Accessibility"),
-        ("guided_perm_screen", "Screen Recording"),
-        ("guided_perm_input", "Input Monitoring"),
-        ("guided_perm_auto", "Turn on the switch in System Settings. This window continues on its own."),
-"""
+EN_NEU_ZEILEN = [
+    '        ("guided_step", "Step"),',
+    '        ("guided_step_of", "of"),',
+    '        ("guided_perm_acc", "Accessibility"),',
+    '        ("guided_perm_screen", "Screen Recording"),',
+    '        ("guided_perm_input", "Input Monitoring"),',
+    '        ("guided_perm_auto", "Turn on the switch in System Settings. '
+    'This window continues on its own."),',
+]
 
-DE_ANKER = '        ("config_input", "Um den entfernten Desktop mit der Tastatur steuern zu können, müssen Sie RustDesk die Berechtigung \\"Eingabeüberwachung\\" erteilen."),\n'
-
-DE_NEU = DE_ANKER + """        ("guided_step", "Schritt"),
-        ("guided_step_of", "von"),
-        ("guided_perm_acc", "Bedienungshilfen"),
-        ("guided_perm_screen", "Bildschirmaufnahme"),
-        ("guided_perm_input", "Eingabeüberwachung"),
-        ("guided_perm_auto", "Schalter in den Systemeinstellungen einschalten. Dieses Fenster geht von selbst weiter."),
-"""
+DE_NEU_ZEILEN = [
+    '        ("guided_step", "Schritt"),',
+    '        ("guided_step_of", "von"),',
+    '        ("guided_perm_acc", "Bedienungshilfen"),',
+    '        ("guided_perm_screen", "Bildschirmaufnahme"),',
+    '        ("guided_perm_input", "Eingabeüberwachung"),',
+    '        ("guided_perm_auto", "Schalter in den Systemeinstellungen '
+    'einschalten. Dieses Fenster geht von selbst weiter."),',
+]
 
 NEUE_SCHLUESSEL = (
     "guided_step",
@@ -1004,13 +1041,27 @@ NEUE_SCHLUESSEL = (
 )
 
 
-def plane_lang(pfad, anker, neu, sprache):
+def plane_lang(pfad, neue_zeilen, sprache):
     s = lies(pfad)
     for k in NEUE_SCHLUESSEL:
         if '("%s"' % k in s:
             abbruch("%s: Schluessel %r existiert schon." % (pfad, k))
-    s = ersetze(s, anker, neu, pfad, "lang-Anker %s" % sprache)
-    plane(pfad, s)
+
+    # Zeilenweise und ausschliesslich am Schluessel. Der uebersetzte Text
+    # wird nicht gelesen -- er darf vom Branding beliebig umgeschrieben
+    # worden sein.
+    zeilen = s.split("\n")
+    treffer = [i for i, z in enumerate(zeilen) if z.lstrip().startswith(LANG_ANKER)]
+    if len(treffer) != 1:
+        abbruch(
+            "%s: Zeile mit %s kommt %d mal vor, erwartet genau 1.\n"
+            "  Der Anker ist der Uebersetzungsschluessel, nicht der Text --\n"
+            "  wenn er fehlt, hat upstream den Schluessel umbenannt."
+            % (pfad, LANG_ANKER, len(treffer))
+        )
+    i = treffer[0]
+    zeilen[i + 1 : i + 1] = list(neue_zeilen)
+    plane(pfad, "\n".join(zeilen))
 
 
 def pruefe_lang(pfad, sprache):
@@ -1030,8 +1081,8 @@ def main():
     plane_mm()
     plane_rs()
     plane_dart()
-    plane_lang(EN_DATEI, EN_ANKER, EN_NEU, "en")
-    plane_lang(DE_DATEI, DE_ANKER, DE_NEU, "de")
+    plane_lang(EN_DATEI, EN_NEU_ZEILEN, "en")
+    plane_lang(DE_DATEI, DE_NEU_ZEILEN, "de")
     print("  Stufe 1  alle %d Anker gefunden, nichts geschrieben" % len(PLAN))
 
     # Stufe 2: schreiben, dann von der Platte gegenlesen.
