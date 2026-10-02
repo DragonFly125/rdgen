@@ -97,6 +97,7 @@ jobs:
           cp .github/patches/pruefeKonfigWirksam.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/entferneEinstellungsknopf.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/setzeMarkenLink.py "$RUNNER_TEMP/rdgen-patches/"
+          cp .github/patches/gefuehrteBerechtigung.py "$RUNNER_TEMP/rdgen-patches/"
           shasum -a 256 "$RUNNER_TEMP/rdgen-patches/"*.py
 
       - uses: actions/download-artifact@v4
@@ -221,6 +222,31 @@ jobs:
           MARKEN_URL: "https://it-labuhn.de"
           MARKEN_PRAEFIX: "IT-Labuhn"
         run: python3 "$RUNNER_TEMP/rdgen-patches/setzeMarkenLink.py"
+
+      # GEFUEHRTE BERECHTIGUNG 2026-10-02. Masters Auftrag: "man oeffnet die
+      # App und wird dazu aufgefordert, die beiden Sachen freizugeben -- von
+      # der App aus wird man erst zu dem einen, dann automatisch zum anderen
+      # Punkt weitergeleitet. Dann muss der andere nicht lesen und suchen."
+      #
+      # Der Schritt setzt drei Dinge, die der unveraenderte Quelltext nicht
+      # hat: den Direktsprung in die zustaendige Unterseite der
+      # Systemeinstellungen (bisher nur fuer die Eingabeueberwachung
+      # vorhanden), eine LEBENDIGE Pruefung der Bildschirmaufnahme, und den
+      # gefuehrten Ablauf mit Fortschritt und automatischem Weiterspringen.
+      #
+      # Die lebendige Pruefung ist nicht Beiwerk, sondern Voraussetzung:
+      # CGPreflightScreenCaptureAccess() ist pro Prozesslauf
+      # zwischengespeichert, die vorhandene Abfrageschleife kann auf
+      # macOS 11+ deshalb nie umschlagen -- ein automatisches
+      # Weiterspringen waere darauf baulich unmoeglich.
+      #
+      # Laeuft NACH beendenKnopfImmer.py, ist aber von der Reihenfolge
+      # unabhaengig: beide Patches fassen in derselben Datei getrennte
+      # Stellen an und sind in jeder Reihenfolge bitgleich anwendbar
+      # (gegengeprueft).
+      - name: Gefuehrte macOS-Freigabe einbauen (GEFUEHRTE BERECHTIGUNG)
+        shell: bash
+        run: python3 "$RUNNER_TEMP/rdgen-patches/gefuehrteBerechtigung.py"
 
       - name: change download link to custom
         if: env.downloadLink != 'https://rustdesk.com/download'
