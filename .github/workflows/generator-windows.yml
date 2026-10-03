@@ -529,6 +529,78 @@ jobs:
           echo "DELAYFIX OK -- Verzoegerungsbedingung erweitert, beide secure_tcp-Waechter unversehrt:"
           grep -n "key.is_empty()" "$DATEI"
 
+      - name: key exchange capability (OPTIONC)
+        if: ${{ env.delayFix == 'true' }}
+        shell: bash
+        run: |
+          # ============================================================
+          # OPTIONC / KXFAEHIGKEIT 2026-10-03
+          #
+          # GEHOERT ZWINGEND ZU DEM SCHRITT DARUEBER (DELAYFIXPRAEZISE).
+          # Jener stellt die beiden secure_tcp-Waechter in src/client.rs
+          # wieder her, die der alte grobe sed stillgelegt hatte. Damit
+          # laeuft secure_tcp() wieder -- und genau dort liegt die
+          # Stoerung vom 24.09.2026 (SECURETCP0924):
+          #
+          #   secure_tcp_impl() wartet in src/common.rs mit
+          #   READ_TIMEOUT = 18 000 ms auf eine KeyExchange-Nachricht des
+          #   Rendezvous-Servers und bricht bei Ablauf ueber `?` ab:
+          #       "Failed to secure tcp: deadline has elapsed"
+          #   Unser hbbs 1.1.16 bietet den Schluesseltausch nicht an
+          #   (am 30.09. und am 03.10. an der Leitung nachgemessen: kein
+          #   einziges Byte). Ist im Client ein Konto angemeldet, ist
+          #   `token` nicht leer -- und die Verbindung stirbt nach 18 s.
+          #
+          # OHNE DIESEN SCHRITT WAERE DER SCHRITT DARUEBER EINE
+          # VERSCHLECHTERUNG, keine Verbesserung.
+          #
+          # Was die Aenderung tut: secure_tcp_impl merkt sich prozessweit
+          # je Rendezvous-Server, ob der Schluesseltausch kommt --
+          # 1500 ms beim Erstkontakt, danach 150 ms (schweigt er), bzw.
+          # 5000 ms (hat er schon einmal getauscht). KEIN Zweig bricht
+          # mehr wegen einer abgelaufenen Frist ab; es geht im Klartext
+          # weiter, so wie die Funktion es in vier von fuenf Zweigen
+          # ohnehin schon tat.
+          #
+          # Was sie ausdruecklich NICHT anfasst: die Signaturpruefung
+          # (sign::verify). Ein Server, der tauschen will, aber falsch
+          # signiert, bricht weiterhin ab -- das ist der MITM-Schutz.
+          # Am 03.10. auf vm302 gegengetestet:
+          #   "Err(Signature mismatch in key exchange)".
+          #
+          # Gemessen, nicht behauptet (vm302, 03.10.2026):
+          #   uebersetzt mit Exit 0, KEINE neue Warnung (4+14 vorher,
+          #   4+14 nachher, Listen maschinell verglichen);
+          #   gegen das echte hbbs: 1515 / 153 / 154 ms, kein Abbruch;
+          #   Zustandsautomat alle fuenf Schritte durchlaufen, auch der
+          #   Zweig "Vorhanden" (5011 ms Zeitzaun, kein Abbruch).
+          #   projekte/RDGEN-DELAYFIX-OPTIONC-2026-10-03.md
+          #   projekte/RDGEN-DELAYFIX-AC2-BAUTEST-2026-10-03.md
+          #
+          # KEIN continue-on-error: ein verfehlter Anker MUSS den Lauf
+          # abbrechen. Das Skript selbst prueft dreistufig und endet mit
+          # Exit 1, ohne zu schreiben, wenn ein Anker nicht genau 1x
+          # dasteht (WUPFAD0926). Der Schritt laeuft VOR dem Bau, ein
+          # Fehlschlag kostet also Sekunden, nicht 40 Minuten.
+          # ============================================================
+          set -euo pipefail
+
+          curl -fsSL --retry 3 --retry-delay 5 -o kxFaehigkeit.py \
+            https://raw.githubusercontent.com/DragonFly125/rdgen/refs/heads/master/.github/patches/kxFaehigkeit.py
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum kxFaehigkeit.py
+          else
+            shasum -a 256 kxFaehigkeit.py
+          fi
+
+          # macOS-Laeufer haben kein `python`, Windows-Git-Bash nicht
+          # immer `python3`. Deshalb nehmen, was da ist, statt zu raten.
+          PY=python3
+          command -v python3 >/dev/null 2>&1 || PY=python
+          "$PY" kxFaehigkeit.py ./src/common.rs
+
+          rm -f kxFaehigkeit.py
+
       - name: use X for offline display instead of orange circle
         if: env.xOffline == 'true'
         uses: nick-fields/retry@v3
