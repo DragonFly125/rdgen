@@ -304,11 +304,108 @@ jobs:
           sed -i -e 's|https://rustdesk.com/download|${{ env.downloadLink }}|' ./src/ui/index.tis
 
       - name: fix connection delay
-        continue-on-error: true
         if: ${{ env.delayFix == 'true' }}
         shell: bash
         run: |
-          sed -i -e 's|!key.is_empty()|false|' ./src/client.rs
+          # ============================================================
+          # DELAYFIXPRAEZISE 2026-10-03
+          # Uebernommen aus dem Upstream-PR bryangerlach/rdgen#295
+          # (Autor Day-Anger, zusammengefuehrt 2026-09-17 als 84d59f0f5e,
+          # "fix(ci): precise connection-delay patch that preserves
+          # key-based TCP security").
+          #
+          # HIER STAND BIS HEUTE:
+          #     sed -i -e 's|!key.is_empty()|false|' ./src/client.rs
+          #
+          # Dieser grobe Ersatz hat in src/client.rs (rustdesk 1.4.9)
+          # GENAU ZWEI Stellen getroffen, Zeile 429 und 858 -- und das
+          # sind die beiden Waechter vor secure_tcp():
+          #     if !key.is_empty() && !token.is_empty() {
+          #         // mainly for the security of token
+          #         secure_tcp(...)
+          # Damit war die Absicherung der STEUERVERBINDUNG zum ID-Server
+          # dauerhaft tot, und zwar auch gegenueber einem Server, der sie
+          # anbietet.
+          #
+          # Die Verbindungsverzoegerung, die dieser Schritt laut seinem
+          # Namen beheben soll, steckt dagegen in Zeile 663 und enthaelt
+          # die gesuchte Zeichenkette ueberhaupt nicht:
+          #     if is_local || peer_nat_type == NatType::SYMMETRIC {
+          #         connect_timeout = MIN;          // MIN = 1000 ms
+          # Der alte Schritt hat also die Absicherung abgeschaltet, ohne
+          # die Verzoegerung zu beheben.
+          #
+          # Nachgemessen am echten Quelltext, nicht vermutet:
+          #   projekte/CORTENDESK-DELAYFIX-VERSCHLUESSELUNG-PRUEFUNG-2026-09-30.md
+          #   projekte/RDGEN-DELAYFIX-PRAEZISE-2026-10-03.md
+          #
+          # JETZT wird nur noch die Bedingung in Zeile 663 um den
+          # Schluesseltest erweitert. Wer einen eigenen ID-Server benutzt
+          # (bei uns immer -- der Schluessel ist eingebrannt), faellt
+          # damit nach 1000 ms auf den Relay zurueck statt erst nach
+          # CONNECT_TIMEOUT. Die beiden secure_tcp-Waechter bleiben
+          # stehen und greifen wieder, sobald ein Server den
+          # Schluesseltausch anbietet.
+          #
+          # KEIN continue-on-error, KEIN "|| true" auf der Abnahme: ein
+          # verfehlter Anker MUSS den Lauf abbrechen. Ein still
+          # durchgerutschter Patch ist schlimmer als ein roter Bau -- er
+          # erzeugt ein Erzeugnis, das die Aenderung nicht traegt und
+          # trotzdem so aussieht, als truege es sie (WUPFAD0926).
+          # ============================================================
+          set -euo pipefail
+
+          DATEI=./src/client.rs
+          ALT='if is_local || peer_nat_type == NatType::SYMMETRIC {'
+          NEU='if is_local || peer_nat_type == NatType::SYMMETRIC || !key.is_empty() {'
+          WAECHTER='!key.is_empty() && !token.is_empty()'
+
+          zaehle() { { grep -oF -- "$2" "$1" || true; } | wc -l | tr -d '[:space:]'; }
+
+          if [ ! -f "$DATEI" ]; then
+            echo "DELAYFIX FEHLER: $DATEI nicht gefunden (cwd=$PWD)" >&2
+            exit 1
+          fi
+
+          # --- Stufe 1: Anker pruefen, NICHTS schreiben ---------------
+          N_ALT=$(zaehle "$DATEI" "$ALT")
+          N_W=$(zaehle "$DATEI" "$WAECHTER")
+          echo "DELAYFIX: Verzoegerungs-Anker ${N_ALT}x, secure_tcp-Waechter ${N_W}x"
+          if [ "$N_ALT" != "1" ]; then
+            echo "DELAYFIX FEHLER: Verzoegerungs-Anker kommt ${N_ALT}x vor, erwartet genau 1." >&2
+            echo "  gesucht: $ALT" >&2
+            grep -n "peer_nat_type == NatType::SYMMETRIC" "$DATEI" >&2 || true
+            exit 1
+          fi
+          if [ "$N_W" != "2" ]; then
+            echo "DELAYFIX FEHLER: secure_tcp-Waechter kommen ${N_W}x vor, erwartet genau 2." >&2
+            echo "  Der Quelltext hat sich geaendert. Diesen Schritt pruefen, bevor gebaut wird." >&2
+            exit 1
+          fi
+
+          # --- Stufe 2: schreiben -------------------------------------
+          # 'sed -i' ist zwischen GNU und BSD nicht portabel: auf dem
+          # macOS-Laeufer verbraucht '-i' das folgende '-e' als
+          # Sicherungsendung und legt eine Datei client.rs-e an. Deshalb
+          # ueber eine Zwischendatei, das verhaelt sich ueberall gleich.
+          sed "s#${ALT}#${NEU}#" "$DATEI" > "${DATEI}.neu"
+          mv "${DATEI}.neu" "$DATEI"
+
+          # --- Stufe 3: von der Platte gegenlesen ---------------------
+          if [ "$(zaehle "$DATEI" "$NEU")" != "1" ]; then
+            echo "DELAYFIX FEHLER: die neue Bedingung steht nicht genau 1x in $DATEI." >&2
+            exit 1
+          fi
+          if [ "$(zaehle "$DATEI" "$WAECHTER")" != "2" ]; then
+            echo "DELAYFIX FEHLER: die beiden secure_tcp-Waechter wurden beschaedigt." >&2
+            exit 1
+          fi
+          if grep -qF -- 'if false && !token.is_empty()' "$DATEI"; then
+            echo "DELAYFIX FEHLER: der alte grobe Ersatz steckt noch im Quelltext." >&2
+            exit 1
+          fi
+          echo "DELAYFIX OK -- Verzoegerungsbedingung erweitert, beide secure_tcp-Waechter unversehrt:"
+          grep -n "key.is_empty()" "$DATEI"
 
       - name: use X for offline display instead of orange circle
         if: env.xOffline == 'true'
@@ -883,11 +980,108 @@ jobs:
           sed -i -e 's|https://rustdesk.com/download|${{ env.downloadLink }}|' ./src/ui/index.tis
 
       - name: fix connection delay
-        continue-on-error: true
         if: ${{ env.delayFix == 'true' }}
         shell: bash
         run: |
-          sed -i -e 's|!key.is_empty()|false|' ./src/client.rs
+          # ============================================================
+          # DELAYFIXPRAEZISE 2026-10-03
+          # Uebernommen aus dem Upstream-PR bryangerlach/rdgen#295
+          # (Autor Day-Anger, zusammengefuehrt 2026-09-17 als 84d59f0f5e,
+          # "fix(ci): precise connection-delay patch that preserves
+          # key-based TCP security").
+          #
+          # HIER STAND BIS HEUTE:
+          #     sed -i -e 's|!key.is_empty()|false|' ./src/client.rs
+          #
+          # Dieser grobe Ersatz hat in src/client.rs (rustdesk 1.4.9)
+          # GENAU ZWEI Stellen getroffen, Zeile 429 und 858 -- und das
+          # sind die beiden Waechter vor secure_tcp():
+          #     if !key.is_empty() && !token.is_empty() {
+          #         // mainly for the security of token
+          #         secure_tcp(...)
+          # Damit war die Absicherung der STEUERVERBINDUNG zum ID-Server
+          # dauerhaft tot, und zwar auch gegenueber einem Server, der sie
+          # anbietet.
+          #
+          # Die Verbindungsverzoegerung, die dieser Schritt laut seinem
+          # Namen beheben soll, steckt dagegen in Zeile 663 und enthaelt
+          # die gesuchte Zeichenkette ueberhaupt nicht:
+          #     if is_local || peer_nat_type == NatType::SYMMETRIC {
+          #         connect_timeout = MIN;          // MIN = 1000 ms
+          # Der alte Schritt hat also die Absicherung abgeschaltet, ohne
+          # die Verzoegerung zu beheben.
+          #
+          # Nachgemessen am echten Quelltext, nicht vermutet:
+          #   projekte/CORTENDESK-DELAYFIX-VERSCHLUESSELUNG-PRUEFUNG-2026-09-30.md
+          #   projekte/RDGEN-DELAYFIX-PRAEZISE-2026-10-03.md
+          #
+          # JETZT wird nur noch die Bedingung in Zeile 663 um den
+          # Schluesseltest erweitert. Wer einen eigenen ID-Server benutzt
+          # (bei uns immer -- der Schluessel ist eingebrannt), faellt
+          # damit nach 1000 ms auf den Relay zurueck statt erst nach
+          # CONNECT_TIMEOUT. Die beiden secure_tcp-Waechter bleiben
+          # stehen und greifen wieder, sobald ein Server den
+          # Schluesseltausch anbietet.
+          #
+          # KEIN continue-on-error, KEIN "|| true" auf der Abnahme: ein
+          # verfehlter Anker MUSS den Lauf abbrechen. Ein still
+          # durchgerutschter Patch ist schlimmer als ein roter Bau -- er
+          # erzeugt ein Erzeugnis, das die Aenderung nicht traegt und
+          # trotzdem so aussieht, als truege es sie (WUPFAD0926).
+          # ============================================================
+          set -euo pipefail
+
+          DATEI=./src/client.rs
+          ALT='if is_local || peer_nat_type == NatType::SYMMETRIC {'
+          NEU='if is_local || peer_nat_type == NatType::SYMMETRIC || !key.is_empty() {'
+          WAECHTER='!key.is_empty() && !token.is_empty()'
+
+          zaehle() { { grep -oF -- "$2" "$1" || true; } | wc -l | tr -d '[:space:]'; }
+
+          if [ ! -f "$DATEI" ]; then
+            echo "DELAYFIX FEHLER: $DATEI nicht gefunden (cwd=$PWD)" >&2
+            exit 1
+          fi
+
+          # --- Stufe 1: Anker pruefen, NICHTS schreiben ---------------
+          N_ALT=$(zaehle "$DATEI" "$ALT")
+          N_W=$(zaehle "$DATEI" "$WAECHTER")
+          echo "DELAYFIX: Verzoegerungs-Anker ${N_ALT}x, secure_tcp-Waechter ${N_W}x"
+          if [ "$N_ALT" != "1" ]; then
+            echo "DELAYFIX FEHLER: Verzoegerungs-Anker kommt ${N_ALT}x vor, erwartet genau 1." >&2
+            echo "  gesucht: $ALT" >&2
+            grep -n "peer_nat_type == NatType::SYMMETRIC" "$DATEI" >&2 || true
+            exit 1
+          fi
+          if [ "$N_W" != "2" ]; then
+            echo "DELAYFIX FEHLER: secure_tcp-Waechter kommen ${N_W}x vor, erwartet genau 2." >&2
+            echo "  Der Quelltext hat sich geaendert. Diesen Schritt pruefen, bevor gebaut wird." >&2
+            exit 1
+          fi
+
+          # --- Stufe 2: schreiben -------------------------------------
+          # 'sed -i' ist zwischen GNU und BSD nicht portabel: auf dem
+          # macOS-Laeufer verbraucht '-i' das folgende '-e' als
+          # Sicherungsendung und legt eine Datei client.rs-e an. Deshalb
+          # ueber eine Zwischendatei, das verhaelt sich ueberall gleich.
+          sed "s#${ALT}#${NEU}#" "$DATEI" > "${DATEI}.neu"
+          mv "${DATEI}.neu" "$DATEI"
+
+          # --- Stufe 3: von der Platte gegenlesen ---------------------
+          if [ "$(zaehle "$DATEI" "$NEU")" != "1" ]; then
+            echo "DELAYFIX FEHLER: die neue Bedingung steht nicht genau 1x in $DATEI." >&2
+            exit 1
+          fi
+          if [ "$(zaehle "$DATEI" "$WAECHTER")" != "2" ]; then
+            echo "DELAYFIX FEHLER: die beiden secure_tcp-Waechter wurden beschaedigt." >&2
+            exit 1
+          fi
+          if grep -qF -- 'if false && !token.is_empty()' "$DATEI"; then
+            echo "DELAYFIX FEHLER: der alte grobe Ersatz steckt noch im Quelltext." >&2
+            exit 1
+          fi
+          echo "DELAYFIX OK -- Verzoegerungsbedingung erweitert, beide secure_tcp-Waechter unversehrt:"
+          grep -n "key.is_empty()" "$DATEI"
 
       - name: use X for offline display instead of orange circle
         if: env.xOffline == 'true'
