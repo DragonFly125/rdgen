@@ -232,13 +232,18 @@ jobs:
         env:
           APPNAME: ${{ env.appname }}
           URLLINK: ${{ env.urlLink }}
-          # 2026-10-02 korrigiert: war https://it-labuhn.de. Dieses Ziel ist
-          # oeffentlich per HTTP-Basic-Auth gesperrt (gemessen: HTTP 401),
-          # der Kunde bekaeme beim Antippen eine Passwortabfrage.
-          # remote.it-labuhn.de ist die Kundenkonsole, oeffentlich
-          # erreichbar (gemessen: HTTP 302 auf die Anmeldung) und traegt
-          # Impressum und Datenschutzerklaerung.
-          MARKEN_URL: "https://remote.it-labuhn.de"
+          # 2026-10-03 Entscheidung des Betreibers: die Hausadresse
+          # https://it-labuhn.de, nicht die Kundenkonsole.
+          # Am 2026-10-02 war hier auf remote.it-labuhn.de umgestellt
+          # worden, weil it-labuhn.de oeffentlich per HTTP-Basic-Auth
+          # gesperrt ist (gemessen: HTTP 401). Diese Begruendung hat der
+          # Betreiber ausdruecklich verworfen: die Sperre ist gewollt
+          # (noch keine Gewerbeanmeldung) und stoert ihn nicht -- der
+          # Markenlink soll trotzdem auf die Firmenadresse zeigen und
+          # nicht auf die Anmeldeseite der Konsole.
+          # Die 401-Sperre ist damit KEIN Mangel dieses Ablaufs und darf
+          # nicht erneut "korrigiert" werden, ohne vorher zu fragen.
+          MARKEN_URL: "https://it-labuhn.de"
           MARKEN_PRAEFIX: "IT-Labuhn"
         run: python3 "$RUNNER_TEMP/rdgen-patches/setzeMarkenLink.py"
 
