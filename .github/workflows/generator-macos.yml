@@ -102,6 +102,7 @@ jobs:
           cp .github/patches/beendenKnopfImmer.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/setzeBuendelkennzeichner.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/keinMikrofon.py "$RUNNER_TEMP/rdgen-patches/"
+          cp .github/patches/macPkgPostinstall.sh "$RUNNER_TEMP/rdgen-patches/"
           shasum -a 256 "$RUNNER_TEMP/rdgen-patches/"*.py
 
       - uses: actions/download-artifact@v4
@@ -1152,6 +1153,67 @@ jobs:
             echo "No DMG file found matching the pattern"
             exit 1
           fi
+
+      # MACPKGASSIGN 2026-10-08 -- Installationsvariante zusaetzlich als .pkg
+      # mit postinstall `--assign --token` (Gegenstueck zu
+      # install-and-assign.ps1). Nur wenn die Nutzlast ein gruppengebundenes
+      # Onboarding-Token traegt (Feld assignToken). Ohne Token bleibt alles
+      # wie bisher (nur DMG) -- die Soforthilfe bekommt nie eines, sie ordnet
+      # ueber den /s/<package_key>-Pfad zu.
+      # Das Token wird nur aus der Umgebungsvariable in eine Datendatei
+      # geschrieben (nie per ${{ }} in den Skripttext, nie ausgegeben); der
+      # Wert ist durch decrypt-secrets zusaetzlich maskiert.
+      - name: Installationspaket mit Gruppenzuordnung (MACPKGASSIGN)
+        if: env.assignToken != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          REL="/Users/runner/work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/flutter/build/macos/Build/Products/Release"
+          APPNAME="${{ env.appname }}"
+          APP="$REL/$APPNAME.app"
+          test -d "$APP" || { echo "App-Buendel fehlt: $APP"; exit 1; }
+          W="$RUNNER_TEMP/macpkg"
+          rm -rf "$W"; mkdir -p "$W/root/Applications" "$W/scripts"
+          ditto "$APP" "$W/root/Applications/$APPNAME.app"
+          cp "$RUNNER_TEMP/rdgen-patches/macPkgPostinstall.sh" "$W/scripts/postinstall"
+          chmod 755 "$W/scripts/postinstall"
+          printf '%s' "$APPNAME" > "$W/scripts/app.name"
+          ( umask 077; printf '%s' "$assignToken" > "$W/scripts/assign.token" )
+          test -s "$W/scripts/assign.token" || { echo "Token leer"; exit 1; }
+          # Nicht verschiebbar: sonst installiert der Installer ueber eine
+          # gleichnamige App an einem anderen Ort statt nach /Applications.
+          pkgbuild --analyze --root "$W/root" "$W/komponenten.plist"
+          /usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$W/komponenten.plist"
+          BUENDEL=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist")
+          PKG="$GITHUB_WORKSPACE/${{ env.filename }}-${{ matrix.job.arch }}.pkg"
+          pkgbuild --root "$W/root" --component-plist "$W/komponenten.plist" \
+            --scripts "$W/scripts" --identifier "$BUENDEL.pkg" \
+            --version "${{ env.VERSION }}" --install-location / "$PKG"
+          # Gegenprobe am fertigen Paket: postinstall, app.name und eine
+          # nicht leere Tokendatei muessen drin sein (Werte nie ausgeben).
+          X="$RUNNER_TEMP/macpkg-pruefung"; rm -rf "$X"
+          pkgutil --expand "$PKG" "$X"
+          SKRIPTE=$(find "$X" -maxdepth 2 -name Scripts | head -n 1)
+          test -n "$SKRIPTE" || { echo "Scripts-Archiv fehlt im Paket"; exit 1; }
+          mkdir "$X/s"
+          if [ -d "$SKRIPTE" ]; then cp -R "$SKRIPTE/." "$X/s/"; else ( cd "$X/s" && gunzip -dc < "$SKRIPTE" | cpio -i --quiet ); fi
+          test -x "$X/s/postinstall" || { echo "postinstall fehlt"; exit 1; }
+          test -s "$X/s/assign.token" || { echo "assign.token fehlt"; exit 1; }
+          test "$(cat "$X/s/app.name")" = "$APPNAME" || { echo "app.name falsch"; exit 1; }
+          grep -q -- '--assign' "$X/s/postinstall" || { echo "postinstall ohne --assign"; exit 1; }
+          echo "Paket gebaut: $(basename "$PKG"), $(stat -f %z "$PKG") Bytes, Token-Laenge $(wc -c < "$X/s/assign.token" | tr -d ' ')"
+          rm -rf "$X" "$W"
+
+      - name: send pkg to rdgen server
+        if: ${{ env.rdgen == 'true' && env.assignToken != '' }}
+        shell: bash
+        run: |
+          curl -fsS -o /dev/null -X POST \
+            -H "Content-Type: multipart/form-data" \
+            -H "Authorization: Bearer ${{ env.token }}" \
+            -F "file=@$GITHUB_WORKSPACE/${{ env.filename }}-${{ matrix.job.arch }}.pkg" \
+            -F "uuid=${{ env.uuid }}" \
+            "${{ secrets.GENURL }}/save_custom_client"
 
       - name: send file to rdgen server
         if: ${{ env.rdgen == 'true' }}
