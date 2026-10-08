@@ -103,6 +103,7 @@ jobs:
           cp .github/patches/setzeBuendelkennzeichner.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/keinMikrofon.py "$RUNNER_TEMP/rdgen-patches/"
           cp .github/patches/macPkgPostinstall.sh "$RUNNER_TEMP/rdgen-patches/"
+          cp .github/patches/stabileKennung.py "$RUNNER_TEMP/rdgen-patches/"
           shasum -a 256 "$RUNNER_TEMP/rdgen-patches/"*.py
 
       - uses: actions/download-artifact@v4
@@ -385,6 +386,17 @@ jobs:
       # anhalten, statt stillschweigend ein Erzeugnis mit dem Mangel zu
       # erzeugen. Und bewusst VOR "Build rustdesk", damit das Sekunden
       # kostet und nicht 40 Minuten.
+      # IDSTABIL-MAC 2026-10-08 -- jede Variante eine EIGENE, stabile Kennung
+      # (Maschinen-UUID + Laufzeitname), wie Windows IDSTABIL0925. Ohne das
+      # leitet RustDesk die Kennung aus der MAC ab und QuickSupport und
+      # Installation teilen sich auf einem Mac dieselbe (Befund 08.10.).
+      # Rot, wenn eine Ersetzung nicht genau einmal greift.
+      - name: Stabile Kennung je Variante (IDSTABIL-MAC)
+        shell: bash
+        env:
+          APPNAME: ${{ env.appname }}
+        run: python3 "$RUNNER_TEMP/rdgen-patches/stabileKennung.py"
+
       - name: Keine Installationsabfrage in der Soforthilfe (KEININSTALL)
         shell: bash
         run: python3 "$RUNNER_TEMP/rdgen-patches/keinInstallSoforthilfe.py"

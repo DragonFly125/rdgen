@@ -50,6 +50,19 @@ fi
 TOKEN="$(cat "$TOKENDATEI")"
 rm -f "$TOKENDATEI"
 
+# IDSTABIL-MAC: --assign meldet die Kennung aus der root-Konfiguration
+# (/var/root/Library/Preferences/com.carriez.<App>). Bleibt dort eine alte
+# Kennung von einer frueheren Installation liegen (frueher MAC-abgeleitet),
+# wuerde root eine ANDERE Kennung zuordnen als die, mit der sich die App des
+# Nutzers meldet. Seit IDSTABIL-MAC ist die Kennung deterministisch
+# (Maschinen-UUID + App-Name), root rechnet nach dem Entfernen also dieselbe
+# Zahl wie der Nutzer - gleiche Massnahme wie SERVICEHARDEN2 unter Windows.
+ROOTKONFIG="/var/root/Library/Preferences/com.carriez.$APPNAME"
+case "$APPNAME" in
+  ""|*/*|.*) log "FEHLER: unzulaessiger App-Name, root-Konfiguration nicht angefasst" ;;
+  *) if [ -d "$ROOTKONFIG" ]; then rm -r -- "$ROOTKONFIG" && log "alte root-Konfiguration entfernt"; fi ;;
+esac
+
 KONSOLENNUTZER="$(stat -f %Su /dev/console 2>/dev/null)"
 GERAETENAME="$(scutil --get ComputerName 2>/dev/null || hostname)"
 NOTIZ="Auto-provisioned by macOS pkg postinstall on $(date '+%Y-%m-%d %H:%M')"
