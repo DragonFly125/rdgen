@@ -45,6 +45,9 @@ jobs:
     uses: ./.github/workflows/fetch-encrypted-secrets.yml
     with:
       zip_url_json: ${{ inputs.zip_url }}
+    secrets:
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
   generate-bridge-linux:
     uses: ./.github/workflows/bridge.yml
@@ -213,7 +216,7 @@ jobs:
             mv ./res/icon.ico ./res/icon.ico.bak
             mv ./res/icon.png ./res/icon.png.bak
             mv ./res/tray-icon.ico ./res/tray-icon.ico.bak
-            wget -O ./res/icon.png ${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}"&"uuid=${{ env.iconlink_uuid }}
+            wget --header="CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" --header="CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -O ./res/icon.png ${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}"&"uuid=${{ env.iconlink_uuid }}
             mv ./res/32x32.png ./res/32x32.png.bak
             mv ./res/64x64.png ./res/64x64.png.bak
             mv ./res/128x128.png ./res/128x128.png.bak
@@ -668,7 +671,7 @@ jobs:
             mkdir -p flutter/tmpdeb/usr/share/rustdesk
             cp ./custom_.txt ./flutter/tmpdeb/usr/share/rustdesk/custom_.txt
             if [[ "${{ env.logolink_url }}" != "false" ]]; then
-              wget -O ./flutter/assets/logo.png ${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}"&"uuid=${{ env.logolink_uuid }}
+              wget --header="CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" --header="CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -O ./flutter/assets/logo.png ${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}"&"uuid=${{ env.logolink_uuid }}
             fi
             if [[ "${{ env.iconlink_url }}" != "false" ]]; then
               mv ./flutter/assets/icon.svg ./flutter/assets/icon.svg.bak
@@ -789,10 +792,10 @@ jobs:
           retry_wait_seconds: 15
           shell: bash
           command: |
-            curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./output/${{ env.filename }}-${{ matrix.job.arch }}.deb" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
-            curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./output/${{ env.filename }}-${{ matrix.job.arch }}.rpm" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
-            curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./output/${{ env.filename }}-suse-${{ matrix.job.arch }}.rpm" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
-            curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./output/${{ env.filename }}-${{ matrix.job.arch }}.pkg.tar.zst" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client || true
+            curl -i -X POST -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./output/${{ env.filename }}-${{ matrix.job.arch }}.deb" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
+            curl -i -X POST -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./output/${{ env.filename }}-${{ matrix.job.arch }}.rpm" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
+            curl -i -X POST -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./output/${{ env.filename }}-suse-${{ matrix.job.arch }}.rpm" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
+            curl -i -X POST -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./output/${{ env.filename }}-${{ matrix.job.arch }}.pkg.tar.zst" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client || true
 
       - name: send file to api server
         if: ${{ env.rdgen == 'false' }}
@@ -962,7 +965,7 @@ jobs:
             mv ./res/icon.ico ./res/icon.ico.bak
             mv ./res/icon.png ./res/icon.png.bak
             mv ./res/tray-icon.ico ./res/tray-icon.ico.bak
-            wget -O ./res/icon.png ${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}"&"uuid=${{ env.iconlink_uuid }}
+            wget --header="CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" --header="CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -O ./res/icon.png ${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}"&"uuid=${{ env.iconlink_uuid }}
             mv ./res/32x32.png ./res/32x32.png.bak
             mv ./res/64x64.png ./res/64x64.png.bak
             mv ./res/128x128.png ./res/128x128.png.bak
@@ -1376,7 +1379,7 @@ jobs:
             mkdir -p flutter/tmpdeb/usr/share/rustdesk
             cp ./custom_.txt ./flutter/tmpdeb/usr/share/rustdesk/custom_.txt
             if [[ "${{ env.logolink_url }}" != "false" ]]; then
-              wget -O ./flutter/assets/logo.png ${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}"&"uuid=${{ env.logolink_uuid }}
+              wget --header="CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" --header="CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -O ./flutter/assets/logo.png ${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}"&"uuid=${{ env.logolink_uuid }}
             fi
             if [[ "${{ env.iconlink_url }}" != "false" ]]; then
               mv ./flutter/assets/icon.svg ./flutter/assets/icon.svg.bak
@@ -1416,7 +1419,7 @@ jobs:
           retry_wait_seconds: 15
           shell: bash
           command: |
-            curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./output/${{ env.filename }}-unattended-wayland-x86_64.deb" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
+            curl -i -X POST -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./output/${{ env.filename }}-unattended-wayland-x86_64.deb" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
 
       - name: send file to api server
         if: ${{ env.rdgen == 'false' }}
@@ -1496,7 +1499,7 @@ jobs:
             mv ./res/icon.ico ./res/icon.ico.bak
             mv ./res/icon.png ./res/icon.png.bak
             mv ./res/tray-icon.ico ./res/tray-icon.ico.bak
-            wget -O ./res/icon.png ${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}"&"uuid=${{ env.iconlink_uuid }}
+            wget --header="CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" --header="CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -O ./res/icon.png ${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}"&"uuid=${{ env.iconlink_uuid }}
             mv ./res/32x32.png ./res/32x32.png.bak
             mv ./res/64x64.png ./res/64x64.png.bak
             mv ./res/128x128.png ./res/128x128.png.bak
@@ -1546,7 +1549,7 @@ jobs:
           retry_wait_seconds: 15
           shell: bash
           command: |
-            curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./appimage/${{ env.filename }}-${{ matrix.job.arch }}.AppImage" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
+            curl -i -X POST -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./appimage/${{ env.filename }}-${{ matrix.job.arch }}.AppImage" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
           
       - name: send file to api server
         if: ${{ env.rdgen == 'false' }}
@@ -1664,7 +1667,7 @@ jobs:
           retry_wait_seconds: 15
           shell: bash
           command: |
-            curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./flatpak/${{ env.filename }}-${{ matrix.job.arch }}.flatpak" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
+            curl -i -X POST -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./flatpak/${{ env.filename }}-${{ matrix.job.arch }}.flatpak" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
           
       - name: send file to api server
         if: ${{ env.rdgen == 'false' }}
@@ -1701,7 +1704,7 @@ jobs:
         with:
           url: "${{ secrets.GENURL }}/cleanzip"
           method: 'POST'
-          customHeaders: '{"Content-Type": "application/json"}'
+          customHeaders: '{"Content-Type": "application/json", "CF-Access-Client-Id": "${{ secrets.CF_ACCESS_CLIENT_ID }}", "CF-Access-Client-Secret": "${{ secrets.CF_ACCESS_CLIENT_SECRET }}"}'
           data: '{"uuid": "${{ env.uuid }}"}'
 
       - name: Set rdgen value

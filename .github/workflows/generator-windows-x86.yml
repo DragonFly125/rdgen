@@ -50,6 +50,9 @@ jobs:
     uses: ./.github/workflows/fetch-encrypted-secrets.yml
     with:
       zip_url_json: ${{ inputs.zip_url }}
+    secrets:
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
   build-for-windows-sciter:
     name: ${{ matrix.job.target }} (${{ matrix.job.os }})
@@ -90,7 +93,7 @@ jobs:
         with:
           url: "${{ secrets.GENURL }}/cleanzip"
           method: 'POST'
-          customHeaders: '{"Content-Type": "application/json"}'
+          customHeaders: '{"Content-Type": "application/json", "CF-Access-Client-Id": "${{ secrets.CF_ACCESS_CLIENT_ID }}", "CF-Access-Client-Secret": "${{ secrets.CF_ACCESS_CLIENT_SECRET }}"}'
           data: '{"uuid": "${{ env.uuid }}"}'
 
       - name: Export GitHub Actions cache environment variables
@@ -284,7 +287,7 @@ jobs:
           retry_wait_seconds: 15
           shell: pwsh
           command: |
-            Invoke-WebRequest -Uri ${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}"&"uuid=${{ env.iconlink_uuid }} -OutFile ./res/icon.png 
+            Invoke-WebRequest -Headers @{"CF-Access-Client-Id"="${{ secrets.CF_ACCESS_CLIENT_ID }}"; "CF-Access-Client-Secret"="${{ secrets.CF_ACCESS_CLIENT_SECRET }}"} -Uri ${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}"&"uuid=${{ env.iconlink_uuid }} -OutFile ./res/icon.png 
             mv ./res/32x32.png ./res/32x32.png.bak
             mv ./res/64x64.png ./res/64x64.png.bak
             mv ./res/128x128.png ./res/128x128.png.bak
@@ -608,7 +611,7 @@ jobs:
         if: ${{ env.rdgen == 'true' }}
         shell: bash
         run: |
-          curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./SignOutput/${{ env.filename }}.exe" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
+          curl -i -X POST -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./SignOutput/${{ env.filename }}.exe" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
 
       - name: send file to api server
         if: ${{ env.rdgen == 'false' }}

@@ -44,6 +44,9 @@ jobs:
     uses: ./.github/workflows/fetch-encrypted-secrets.yml
     with:
       zip_url_json: ${{ inputs.zip_url }}
+    secrets:
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
   generate-bridge:
     uses: ./.github/workflows/bridge.yml
@@ -120,7 +123,7 @@ jobs:
         with:
           url: "${{ secrets.GENURL }}/cleanzip"
           method: 'POST'
-          customHeaders: '{"Content-Type": "application/json"}'
+          customHeaders: '{"Content-Type": "application/json", "CF-Access-Client-Id": "${{ secrets.CF_ACCESS_CLIENT_ID }}", "CF-Access-Client-Secret": "${{ secrets.CF_ACCESS_CLIENT_SECRET }}"}'
           data: '{"uuid": "${{ env.uuid }}"}'
 
       - name: Export GitHub Actions cache environment variables
@@ -546,8 +549,10 @@ jobs:
           # Download icon using curl with additional SSL options
           curl -k -L --tlsv1.2 --proto =https --ssl-reqd \
             -H "User-Agent: Mozilla/5.0" \
+            -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
+            -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
             "${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}&uuid=${{ env.iconlink_uuid }}" \
-            -o ./res/icon.png || wget --no-check-certificate -O ./res/icon.png "${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}&uuid=${{ env.iconlink_uuid }}"
+            -o ./res/icon.png || wget --header="CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" --header="CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" --no-check-certificate -O ./res/icon.png "${{ env.iconlink_url }}/get_png?filename=${{ env.iconlink_file }}&uuid=${{ env.iconlink_uuid }}"
             
           # Backup existing files (if they exist)
           [ -f "./res/32x32.png" ] && mv ./res/32x32.png ./res/32x32.png.bak
@@ -1016,9 +1021,13 @@ jobs:
           mkdir -p "$ASSETS_DIR"
           curl -k -L --tlsv1.2 --proto =https --ssl-reqd \
             -H "User-Agent: Mozilla/5.0" \
+            -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
+            -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
             "${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}&uuid=${{ env.logolink_uuid }}" \
             -o "$ASSETS_DIR/logo.png" || \
           wget --no-check-certificate \
+            --header="CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
+            --header="CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
             -O "$ASSETS_DIR/logo.png" \
             "${{ env.logolink_url }}/get_png?filename=${{ env.logolink_file }}&uuid=${{ env.logolink_uuid }}"
 
@@ -1160,6 +1169,8 @@ jobs:
           curl -i -X POST \
             -H "Content-Type: multipart/form-data" \
             -H "Authorization: Bearer ${{ env.token }}" \
+            -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
+            -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
             -F "file=@$GITHUB_WORKSPACE/${{ env.filename }}-${{ matrix.job.arch }}.dmg" \
             -F "uuid=${{ env.uuid }}" \
             "${{ secrets.GENURL }}/save_custom_client"
